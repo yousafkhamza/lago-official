@@ -6,7 +6,7 @@ env:
     DOCKER_PASS: "DOCKERHUB_PASS"
 
 phases:
-  install:
+  pre_build:
     commands:
       - echo "list all files"
       - ls -latrh
@@ -30,27 +30,36 @@ phases:
       - echo "$DOCKER_ENV_PERMISSION_SERVICE" >> .env
       - echo "docker login"
       - docker login -u $DOCKER_USER -p $DOCKER_PASS
-  build:
-    commands:
-      - echo "list again"
-      - ls -latrh
-      - echo "build making"
-      - docker-compose build
-      - echo "list build image"
-      - ls -latrh
-      - 
-  post_build:
-    commands:
       - echo Logging in to Amazon ECR...
       - aws --version
-      - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
-      - REPOSITORY_URI=836907204716.dkr.ecr.us-east-1.amazonaws.com/lagostaging
+      - $(aws ecr get-login --no-include-email --region $AWS_DEFAULT_REGION)
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building and pushing Docker images defined in Docker Compose...
+
+      # Replace with the path to your Docker Compose file
+      - docker-compose -f ./docker-compose.yml build
+
+      # Authenticate Docker to your ECR registry
+      - $(aws ecr get-login --no-include-email --region $AWS_DEFAULT_REGION)
+
+      - IMAGE_REPO_URL=836907204716.dkr.ecr.us-east-1.amazonaws.com/lagostaging
       - REPOSITORY_NAME=lagostaging
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-9)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
-      - docker login --username AWS --password-stdin 836907204716.dkr.ecr.us-east-1.amazonaws.com
-      - docker-compose push
+
+      # Push each image to ECR with appropriate tags
+      - |
+        services=("db" "redis" "api" "front" "api-worker" "api-clock")
+
+        for service in "${services[@]}"; do
+          docker tag ${service}:latest $IMAGE_REPO_URL/${service}:latest
+          docker push $IMAGE_REPO_URL/${service}:latest
+        done
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      
 artifacts:
-  files:
-    - '**/*'
-  base-directory: ./build
+  files: imagedefinitions.json
