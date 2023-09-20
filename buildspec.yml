@@ -1,0 +1,57 @@
+version: 0.2
+
+env:
+  parameter-store:
+    DOCKER_ENV_PERMISSION_SERVICE: "DOCKER_ENV_PERMISSION_SERVICE"
+    DOCKER_USER: "DOCKERHUB_USERNAME"
+    DOCKER_PASS: "DOCKERHUB_PASS"
+
+phases:
+  install:
+    commands:
+      - echo "list all files"
+      - ls -latrh
+      - echo "current docker version"
+      - docker --version
+      - echo "docker-compose current version"
+      - docker-compose --version
+      - echo "docker compose update"
+      - mkdir docinstall
+      - cd docinstall
+      - wget -nv https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)
+      - sudo mv docker-compose-$(uname -s)-$(uname -m) /usr/local/bin/docker-compose
+      - sudo chmod -v +x /usr/local/bin/docker-compose
+      - cd ..
+      - rm -rf docinstall
+      - docker-compose --version
+      - echo "python version"
+      - python --version
+      - echo "docker env update"
+      - echo "$DOCKER_ENV_PERMISSION_SERVICE" 
+      - echo "$DOCKER_ENV_PERMISSION_SERVICE" >> .env
+      - echo "docker login"
+      - docker login -u $DOCKER_USER -p $DOCKER_PASS
+  build:
+    commands:
+      - echo "list again"
+      - ls -latrh
+      - echo "build making"
+      - docker-compose build
+      - echo "list build image"
+      - ls -latrh
+      - 
+  post_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+      - REPOSITORY_URI=836907204716.dkr.ecr.us-east-1.amazonaws.com/lagostaging
+      - REPOSITORY_NAME=lagostaging
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-9)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - docker login --username AWS --password-stdin 836907204716.dkr.ecr.us-east-1.amazonaws.com
+      - docker-compose push
+artifacts:
+  files:
+    - '**/*'
+  base-directory: ./build
